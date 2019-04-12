@@ -1,0 +1,6 @@
+name: tailor
+title: ODS Tailor Utility
+version: latest
+nav: 
+- modules/ROOT/nav.adoc
+- modules/ROOT/components.adoc
