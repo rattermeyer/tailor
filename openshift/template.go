@@ -13,59 +13,11 @@ import (
 	"github.com/xeipuuv/gojsonpointer"
 )
 
-var (
-	KindMapping = map[string]string{
-		"svc":                   "Service",
-		"service":               "Service",
-		"route":                 "Route",
-		"dc":                    "DeploymentConfig",
-		"deploymentconfig":      "DeploymentConfig",
-		"bc":                    "BuildConfig",
-		"buildconfig":           "BuildConfig",
-		"is":                    "ImageStream",
-		"imagestream":           "ImageStream",
-		"pvc":                   "PersistentVolumeClaim",
-		"persistentvolumeclaim": "PersistentVolumeClaim",
-		"template":              "Template",
-		"cm":                    "ConfigMap",
-		"configmap":             "ConfigMap",
-		"secret":                "Secret",
-		"rolebinding":           "RoleBinding",
-		"serviceaccount":        "ServiceAccount",
-	}
-)
-
-func ExportAsTemplate(filter *ResourceFilter, exportOptions *cli.ExportOptions) (string, error) {
-	ret := ""
-	args := []string{"export", "--as-template=tailor", "--output=yaml"}
-	if len(filter.Label) > 0 {
-		args = append(args, "--selector="+filter.Label)
-	}
-	target := filter.ConvertToTarget()
-	args = append(args, target)
-	cmd := cli.ExecOcCmd(
-		args,
-		exportOptions.Namespace,
-		exportOptions.Selector,
-	)
-	outBytes, errBytes, err := cli.RunCmd(cmd)
-
+func ExportAsTemplateFile(filter *ResourceFilter, exportOptions *cli.ExportOptions) (string, error) {
+	outBytes, err := ExportResources(filter, exportOptions.Namespace)
 	if err != nil {
-		ret = string(errBytes)
-		if strings.Contains(ret, "no resources found") {
-			cli.DebugMsg("No", target, "resources found.")
-			return "", nil
-		}
-		return "", fmt.Errorf(
-			"Failed to export %s resources.\n"+
-				"%s\n",
-			target,
-			ret,
-		)
+		return "", err
 	}
-
-	cli.DebugMsg("Exported", target, "resources")
-
 	if len(outBytes) == 0 {
 		return "", nil
 	}
@@ -94,7 +46,7 @@ func ExportAsTemplate(filter *ResourceFilter, exportOptions *cli.ExportOptions) 
 		}
 		item.RemoveUnmanagedAnnotations()
 		itemPointer, _ := gojsonpointer.NewJsonPointer("/objects/" + strconv.Itoa(k))
-		itemPointer.Set(m, item.Config)
+		_, _ = itemPointer.Set(m, item.Config)
 	}
 
 	cli.DebugMsg("Remove metadata from template")
@@ -114,13 +66,13 @@ func ExportAsTemplate(filter *ResourceFilter, exportOptions *cli.ExportOptions) 
 	return string(b), err
 }
 
-func ExportResources(filter *ResourceFilter, compareOptions *cli.CompareOptions) ([]byte, error) {
+func ExportResources(filter *ResourceFilter, namespace string) ([]byte, error) {
 	target := filter.ConvertToKinds()
-	args := []string{"export", target, "--output=yaml"}
+	args := []string{"export", target, "--output=yaml", "--as-template=tailor"}
 	cmd := cli.ExecOcCmd(
 		args,
-		compareOptions.Namespace,
-		compareOptions.Selector,
+		namespace,
+		filter.Label,
 	)
 	outBytes, errBytes, err := cli.RunCmd(cmd)
 
@@ -212,7 +164,10 @@ func ProcessTemplate(templateDir string, name string, paramDir string, compareOp
 		tempParamFile := ".combined.env"
 		defer os.Remove(tempParamFile)
 		cli.DebugMsg("Writing contents of param files into", tempParamFile)
-		ioutil.WriteFile(tempParamFile, paramFileBytes, 0644)
+		err = ioutil.WriteFile(tempParamFile, paramFileBytes, 0644)
+		if err != nil {
+			return []byte{}, err
+		}
 		args = append(args, "--param-file="+tempParamFile)
 	}
 

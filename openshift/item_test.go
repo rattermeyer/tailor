@@ -24,7 +24,10 @@ func TestNewResourceItem(t *testing.T) {
 func TestChangesFromEqual(t *testing.T) {
 	currentItem := getItem(t, getBuildConfig(), "platform")
 	desiredItem := getItem(t, getBuildConfig(), "template")
-	desiredItem.ChangesFrom(currentItem, []string{})
+	_, err := desiredItem.ChangesFrom(currentItem, []string{})
+	if err != nil {
+		t.Errorf(err.Error())
+	}
 }
 
 func TestChangesFromDifferent(t *testing.T) {
@@ -117,12 +120,12 @@ func TestChangesFromAnnotationFields(t *testing.T) {
 	}
 	actualPatchOne := changes[0].Patches[0]
 	actualPatchTwo := changes[0].Patches[1]
-	expectedPatchOne := &JsonPatch{
+	expectedPatchOne := &jsonPatch{
 		Op:    "add",
 		Path:  "/metadata/annotations/foo",
 		Value: "bar",
 	}
-	expectedPatchTwo := &JsonPatch{
+	expectedPatchTwo := &jsonPatch{
 		Op:    "add",
 		Path:  "/metadata/annotations/managed-annotations.tailor.opendevstack.org",
 		Value: "foo",
@@ -141,8 +144,8 @@ func TestChangesFromAnnotationFields(t *testing.T) {
 	if err != nil {
 		t.Errorf(err.Error())
 	}
-	var actualPatch *JsonPatch
-	var expectedPatch *JsonPatch
+	var actualPatch *jsonPatch
+	var expectedPatch *jsonPatch
 	if len(changes) > 1 || changes[0].Action != "Noop" {
 		actualPatch = changes[0].Patches[0]
 		t.Errorf("Platform and template should have no drift, got %v", actualPatch)
@@ -159,7 +162,7 @@ func TestChangesFromAnnotationFields(t *testing.T) {
 		t.Errorf("Platform and template should have drift")
 	}
 	actualPatch = changes[0].Patches[0]
-	expectedPatch = &JsonPatch{
+	expectedPatch = &jsonPatch{
 		Op:    "add",
 		Path:  "/metadata/annotations/managed-annotations.tailor.opendevstack.org",
 		Value: "foo",
@@ -179,7 +182,7 @@ func TestChangesFromAnnotationFields(t *testing.T) {
 		t.Errorf("Platform and template should have drift")
 	}
 	actualPatch = changes[0].Patches[0]
-	expectedPatch = &JsonPatch{
+	expectedPatch = &jsonPatch{
 		Op:    "replace",
 		Path:  "/metadata/annotations/foo",
 		Value: "baz",
@@ -204,7 +207,7 @@ func TestChangesFromAnnotationFields(t *testing.T) {
 		t.Errorf("Platform and template should have drift")
 	}
 	actualPatch = changes[0].Patches[0]
-	expectedPatch = &JsonPatch{
+	expectedPatch = &jsonPatch{
 		Op:    "replace",
 		Path:  "/metadata/annotations/foo",
 		Value: "baz",
@@ -223,7 +226,7 @@ func TestChangesFromAnnotationFields(t *testing.T) {
 		t.Errorf("Platform and template should have drift")
 	}
 	actualPatch = changes[0].Patches[0]
-	expectedPatch = &JsonPatch{
+	expectedPatch = &jsonPatch{
 		Op:   "remove",
 		Path: "/metadata/annotations/foo",
 	}
@@ -234,7 +237,10 @@ func TestChangesFromAnnotationFields(t *testing.T) {
 
 func getItem(t *testing.T, input []byte, source string) *ResourceItem {
 	var f interface{}
-	yaml.Unmarshal(input, &f)
+	err := yaml.Unmarshal(input, &f)
+	if err != nil {
+		t.Fatalf("Could not umarshal yaml: %v", err)
+	}
 	m := f.(map[string]interface{})
 	item, err := NewResourceItem(m, source)
 	if err != nil {

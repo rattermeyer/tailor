@@ -47,6 +47,26 @@ var (
 	platformModifiedFields = []string{
 		"/spec/template/spec/containers/[0-9]+/image$",
 	}
+
+	KindMapping = map[string]string{
+		"svc":                   "Service",
+		"service":               "Service",
+		"route":                 "Route",
+		"dc":                    "DeploymentConfig",
+		"deploymentconfig":      "DeploymentConfig",
+		"bc":                    "BuildConfig",
+		"buildconfig":           "BuildConfig",
+		"is":                    "ImageStream",
+		"imagestream":           "ImageStream",
+		"pvc":                   "PersistentVolumeClaim",
+		"persistentvolumeclaim": "PersistentVolumeClaim",
+		"template":              "Template",
+		"cm":                    "ConfigMap",
+		"configmap":             "ConfigMap",
+		"secret":                "Secret",
+		"rolebinding":           "RoleBinding",
+		"serviceaccount":        "ServiceAccount",
+	}
 )
 
 type ResourceItem struct {
@@ -70,6 +90,16 @@ func (i *ResourceItem) FullName() string {
 	return i.Kind + "/" + i.Name
 }
 
+func (i *ResourceItem) HasLabel(label string) bool {
+	labelParts := strings.Split(label, "=")
+	if _, ok := i.Labels[labelParts[0]]; !ok {
+		return false
+	} else if i.Labels[labelParts[0]].(string) != labelParts[1] {
+		return false
+	}
+	return true
+}
+
 func (templateItem *ResourceItem) ChangesFrom(platformItem *ResourceItem, externallyModifiedPaths []string) ([]*Change, error) {
 	err := templateItem.prepareForComparisonWithPlatformItem(platformItem, externallyModifiedPaths)
 	if err != nil {
@@ -80,7 +110,7 @@ func (templateItem *ResourceItem) ChangesFrom(platformItem *ResourceItem, extern
 		return nil, err
 	}
 
-	comparison := map[string]*JsonPatch{}
+	comparison := map[string]*jsonPatch{}
 	addedPaths := []string{}
 
 	for _, path := range templateItem.Paths {
@@ -98,7 +128,7 @@ func (templateItem *ResourceItem) ChangesFrom(platformItem *ResourceItem, extern
 			if templateItem.isImmutableField(path) {
 				return recreateChanges(templateItem, platformItem), nil
 			} else {
-				comparison[path] = &JsonPatch{Op: "add", Value: templateItemVal}
+				comparison[path] = &jsonPatch{Op: "add", Value: templateItemVal}
 				addedPaths = append(addedPaths, path)
 			}
 		} else {
@@ -106,21 +136,21 @@ func (templateItem *ResourceItem) ChangesFrom(platformItem *ResourceItem, extern
 			switch templateItemVal.(type) {
 			case []interface{}:
 				// slice content changed, continue ...
-				comparison[path] = &JsonPatch{Op: "noop"}
+				comparison[path] = &jsonPatch{Op: "noop"}
 			case []string:
 				// slice content changed, continue ...
-				comparison[path] = &JsonPatch{Op: "noop"}
+				comparison[path] = &jsonPatch{Op: "noop"}
 			case map[string]interface{}:
 				// map content changed, continue
-				comparison[path] = &JsonPatch{Op: "noop"}
+				comparison[path] = &jsonPatch{Op: "noop"}
 			default:
 				if templateItemVal == platformItemVal {
-					comparison[path] = &JsonPatch{Op: "noop"}
+					comparison[path] = &jsonPatch{Op: "noop"}
 				} else {
 					if templateItem.isImmutableField(path) {
 						return recreateChanges(templateItem, platformItem), nil
 					} else {
-						comparison[path] = &JsonPatch{Op: "replace", Value: templateItemVal}
+						comparison[path] = &jsonPatch{Op: "replace", Value: templateItemVal}
 					}
 				}
 			}
@@ -136,7 +166,7 @@ func (templateItem *ResourceItem) ChangesFrom(platformItem *ResourceItem, extern
 				continue
 			}
 			// Pointer exist only in platformItem
-			comparison[path] = &JsonPatch{Op: "remove"}
+			comparison[path] = &jsonPatch{Op: "remove"}
 			deletedPaths = append(deletedPaths, path)
 		}
 	}
@@ -144,15 +174,16 @@ func (templateItem *ResourceItem) ChangesFrom(platformItem *ResourceItem, extern
 	c := &Change{
 		Kind:         templateItem.Kind,
 		Name:         templateItem.Name,
-		Patches:      []*JsonPatch{},
+		Patches:      []*jsonPatch{},
 		CurrentState: platformItem.YamlConfig(),
 		DesiredState: templateItem.YamlConfig(),
 	}
 
 	for path, patch := range comparison {
 		if patch.Op != "noop" {
+			cli.DebugMsg("add path", path)
 			patch.Path = path
-			c.AddPatch(patch)
+			c.addPatch(patch)
 		}
 	}
 
@@ -202,7 +233,7 @@ func (i *ResourceItem) parseConfig(m map[string]interface{}) error {
 		initPointer, _ := gojsonpointer.NewJsonPointer(p)
 		_, _, err := initPointer.Get(m)
 		if err != nil {
-			initPointer.Set(m, make(map[string]interface{}))
+			_, _ = initPointer.Set(m, make(map[string]interface{}))
 		}
 	}
 
@@ -227,14 +258,14 @@ func (i *ResourceItem) parseConfig(m map[string]interface{}) error {
 		}
 	} else { // source = template
 		// For template items, all annotations are managed
-		for k, _ := range i.Annotations {
+		for k := range i.Annotations {
 			i.TailorManagedAnnotations = append(i.TailorManagedAnnotations, k)
 		}
 		// If there are any managed annotations, we need to set tailorManagedAnnotation
 		if len(i.TailorManagedAnnotations) > 0 {
 			p, _ := gojsonpointer.NewJsonPointer("/metadata/annotations/" + tailorManagedAnnotation)
 			sort.Strings(i.TailorManagedAnnotations)
-			p.Set(m, strings.Join(i.TailorManagedAnnotations, ","))
+			_, _ = p.Set(m, strings.Join(i.TailorManagedAnnotations, ","))
 		}
 	}
 
@@ -287,7 +318,7 @@ func (i *ResourceItem) parseConfig(m map[string]interface{}) error {
 					anP, _ := gojsonpointer.NewJsonPointer("/metadata/annotations")
 					_, _, err := anP.Get(i.Config)
 					if err != nil {
-						anP.Set(i.Config, map[string]interface{}{})
+						_, _ = anP.Set(i.Config, map[string]interface{}{})
 						newPaths = append(newPaths, "/metadata/annotations")
 					}
 					cli.DebugMsg("Template: Setting", annotationPath, "to", specValue.(string))
@@ -407,17 +438,26 @@ func (templateItem *ResourceItem) prepareForComparisonWithPlatformItem(platformI
 		platformItemVal, _, err := pathPointer.Get(platformItem.Config)
 		if err != nil {
 			cli.DebugMsg("No such path", path, "in platform item", platformItem.FullName())
-		}
-		_, err = pathPointer.Set(templateItem.Config, platformItemVal)
-		if err != nil {
-			cli.DebugMsg(
-				"Could not set",
-				path,
-				"to",
-				platformItemVal.(string),
-				"in template item",
-				templateItem.FullName(),
-			)
+		} else {
+			_, err = pathPointer.Set(templateItem.Config, platformItemVal)
+			if err != nil {
+				cli.DebugMsg(fmt.Sprintf(
+					"Could not set %s to %v in template item %s",
+					path,
+					platformItemVal,
+					templateItem.FullName(),
+				))
+			} else {
+				// Add ignored path and its subpaths to the paths slice
+				// of the template item.
+				templateItem.Paths = append(templateItem.Paths, path)
+				switch vv := platformItemVal.(type) {
+				case []interface{}:
+					templateItem.walkArray(vv, path)
+				case map[string]interface{}:
+					templateItem.walkMap(vv, path)
+				}
+			}
 		}
 	}
 
@@ -429,7 +469,7 @@ func (templateItem *ResourceItem) prepareForComparisonWithPlatformItem(platformI
 // - remove all annotations which are not managed
 func (platformItem *ResourceItem) prepareForComparisonWithTemplateItem(templateItem *ResourceItem) error {
 	unmanagedAnnotations := []string{}
-	for a, _ := range platformItem.Annotations {
+	for a := range platformItem.Annotations {
 		if a == tailorManagedAnnotation {
 			continue
 		}

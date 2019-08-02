@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## [0.9.5] - 2019-07-22
+
+### Added
+- Exclusion of kinds/resources/labels via the `--exclude` flag ([#115](https://github.com/opendevstack/tailor/issues/115)).
+
+### Changed
+- Addressed issues reported by golangci-lint ([#119](https://github.com/opendevstack/tailor/issues/119), thanks @u5surf).
+
+## [0.9.4] - 2019-04-23
+
+### Fixed 
+- Do not issue removal patches when a path with an array value is ignored
+- Item is not found when both name and selector is given (oc returns a single item then instead of a list).
+
 ## [0.9.3] - 2019-03-15
 
 ### Fixed
